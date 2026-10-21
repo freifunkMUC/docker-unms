@@ -1,0 +1,66 @@
+name: ghcr
+
+# Fork build: linux/amd64 only, pushed to ghcr.io/freifunkmuc/docker-unms.
+# The upstream workflows (self-hosted runner, Docker Hub) stay disabled here.
+# The fork can go once nico640/docker-unms ships the fixes it carries.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  IMAGE: ghcr.io/freifunkmuc/docker-unms
+
+jobs:
+  build-and-push:
+    permissions:
+      packages: write
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      # The ubnt/* stages pull several GB; the runner needs the room.
+      - name: Free disk space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Versions
+        id: version
+        run: |
+          unms=$(sed -n 's#^FROM .*ubnt/unms:\([^ ]*\) as unms$#\1#p' Dockerfile)
+          php=$(sed -n 's/^ENV PHP_VERSION=php-//p' Dockerfile)
+          echo "unms=$unms" >> "$GITHUB_OUTPUT"
+          echo "php=$php" >> "$GITHUB_OUTPUT"
+          echo "tag=$unms-php$php" >> "$GITHUB_OUTPUT"
+          echo "date=$(date -u +%Y%m%d)" >> "$GITHUB_OUTPUT"
+
+      - name: Build
+        run: |
+          DOCKER_BUILDKIT=1 docker build --platform linux/amd64 -t unms:test \
+            --label org.opencontainers.image.source=https://github.com/${{ github.repository }} \
+            --label org.opencontainers.image.version=${{ steps.version.outputs.tag }} .
+
+      - name: Smoke test
+        run: |
+          docker run --rm --entrypoint /usr/local/bin/php unms:test -v | tee /dev/stderr \
+            | grep -q "^PHP ${{ steps.version.outputs.php }} "
+          docker run --rm --entrypoint /usr/local/sbin/php-fpm unms:test -v | grep -q "^PHP ${{ steps.version.outputs.php }} "
+
+      - name: Login to GHCR
+        if: github.event_name != 'pull_request' && github.ref_name == 'master'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # <unms>-php<php> and latest move with every rebuild, the dated tag stays.
+      - name: Push
+        if: github.event_name != 'pull_request' && github.ref_name == 'master'
+        run: |
+          for t in ${{ steps.version.outputs.tag }} ${{ steps.version.outputs.tag }}-${{ steps.version.outputs.date }} latest; do
+            docker tag unms:test "$IMAGE:$t" && docker push "$IMAGE:$t"
+          done
