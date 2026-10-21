@@ -48,6 +48,8 @@ jobs:
           docker run --rm --entrypoint /usr/local/bin/php unms:test -v | tee /dev/stderr \
             | grep -q "^PHP ${{ steps.version.outputs.php }} "
           docker run --rm --entrypoint /usr/local/sbin/php-fpm unms:test -v | grep -q "^PHP ${{ steps.version.outputs.php }} "
+          node=$(sed -n 's#^FROM node:\([0-9.]*\)-.* as node$#\1#p' Dockerfile)
+          docker run --rm --entrypoint /usr/local/bin/node unms:test -v | grep -qx "v$node"
 
       - name: Login to GHCR
         if: github.event_name != 'pull_request' && github.ref_name == 'master'
