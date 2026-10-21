@@ -6,9 +6,15 @@ FROM --platform=linux/amd64 ubnt/unms-siridb:3.1.65 as unms-siridb
 FROM --platform=linux/amd64 ubnt/unms-postgres:3.1.65 as unms-postgres
 FROM rabbitmq:3.7.28-alpine as rabbitmq
 FROM timescale/timescaledb:2.18.2-pg17 as timescaledb
+FROM node:22.23.4-alpine3.23 as node
 
 FROM nico640/s6-alpine-node:22.22.0-3.23
 ARG TARGETARCH
+
+# node security releases ahead of the base image (same alpine 3.23 build as the base)
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
+COPY --from=node /usr/local/include/node /usr/local/include/node
+COPY --from=node /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/npm
 
 # base deps postgres 17, certbot
 RUN set -x \
@@ -29,7 +35,7 @@ WORKDIR /home/app/unms
 # copy unms app from offical image since the source code is not published at this time
 COPY --from=unms /home/app/unms /home/app/unms
 
-ENV LIBVIPS_VERSION=8.14.4
+ENV LIBVIPS_VERSION=8.14.5
 
 RUN apk add --no-cache --virtual .build-deps python3 g++ glib-dev meson expat-dev gobject-introspection-dev \
     && mkdir -p /tmp/src /home/app/unms/tmp && cd /tmp/src \
@@ -261,7 +267,7 @@ RUN apk add --no-cache --virtual .build-deps autoconf dpkg-dev dpkg file g++ gcc
 # start siridb #
 COPY --from=unms-siridb /etc/siridb/siridb.conf /etc/siridb/siridb.conf
 
-ENV SIRIDB_VERSION=2.0.53
+ENV SIRIDB_VERSION=2.0.56
 
 RUN set -x \
     && [ $TARGETARCH = "arm" ] && export LIBCLERI_VERSION=0.12.2 || export LIBCLERI_VERSION=1.0.2 \
